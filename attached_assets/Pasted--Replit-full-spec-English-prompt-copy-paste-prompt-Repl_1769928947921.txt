@@ -1,0 +1,245 @@
+नीचे **Replit में डालने के लिए एकदम “full-spec” English prompt** है—copy-paste कर दे। यह prompt Replit को साफ बताएगा: कौन-सी files चाहिए, किस तरह का Streamlit app बनाना है, preprocessing + recommender + insights सब, और common Replit issues (host/port) भी cover करेगा.
+
+---
+
+## ✅ Replit Prompt (Copy-Paste as-is)
+
+Build a complete **Streamlit** web app in Python called **“Internship Matcher (India 2025)”**. The app must load a CSV dataset of internships (~8.4k rows), preprocess it into structured fields, provide an **Explainable Recommender**, and a **Market Insights** page.
+
+### 0) Project Setup / Files
+
+Assume these files/folders will exist in the Replit project:
+
+* `data/merged_internships_dataset.csv`  (raw input CSV)
+* Output file to create on first run: `data/internships_processed.csv` (processed cache)
+
+If `data/internships_processed.csv` exists, load it directly to speed up startup.
+If not, load the raw CSV, preprocess, then save the processed CSV.
+
+### 1) Dataset Schema
+
+The raw CSV has these columns (strings):
+
+* `internship_id`, `date_time`, `profile`, `company`, `location`, `start_date`, `stipend`, `duration`, `apply_by_date`, `offer`, `education`, `skills`, `perks`
+
+### 2) App Pages (Navigation)
+
+Create 3 pages:
+
+1. **Matcher**
+2. **Market Insights**
+3. **About**
+
+Use a sidebar navigation (radio/selectbox).
+
+---
+
+## 3) Preprocessing Requirements (must be implemented)
+
+Create a preprocessing pipeline that produces new usable columns. Keep original columns too.
+
+### 3.1 Normalize “missing-like” tokens
+
+Many missing values are encoded as text (e.g. “N/A”, “Not specified”, “-”, “None”, “Null”, empty string). Convert these to actual nulls.
+Do this case-insensitively and after trimming spaces.
+
+### 3.2 Parse stipend text into structured fields
+
+From column `stipend` create:
+
+* `stipend_min` (float, INR)
+* `stipend_max` (float, INR)
+* `stipend_type` in {`fixed`, `range`, `unpaid`, `performance_based`, `unknown`}
+* `stipend_period` in {`month`, `week`, `lump_sum`, `unknown`}
+
+Rules:
+
+* If “unpaid” -> stipend_min=0, stipend_max=0, stipend_type=`unpaid`
+* If “performance” -> stipend_type=`performance_based`
+* If numbers exist (e.g. “10,000”, “10000-15000”), extract them and fill min/max
+* Detect period keywords: month/week/lump sum
+* If cannot parse -> stipend_type=`unknown`, min/max null
+
+### 3.3 Parse duration into months
+
+From `duration` create:
+
+* `duration_months` (float)
+  Rules:
+* X months -> X
+* X weeks -> X / 4.345
+* X days -> X / 30
+
+### 3.4 Parse dates safely
+
+Convert:
+
+* `apply_by_date` -> `apply_by_dt` (datetime)
+* `date_time` -> `posted_dt` (datetime)
+* `start_date` -> `start_dt` (datetime if possible)
+  Also:
+* `start_immediate` boolean if start_date contains “immediate”.
+
+Use `pd.to_datetime(..., errors="coerce")`. Keep originals.
+
+### 3.5 Normalize location
+
+From `location` create:
+
+* `is_remote` boolean if contains: “work from home”, “wfh”, “remote”
+* `city` best-effort extraction for single-city entries; else “Multiple” or “Unknown”
+* `is_multi_city` boolean when multiple cities are listed (commas, slashes, “multiple locations”, “delhi/ncr” etc.)
+
+### 3.6 Skills tokens + text blob
+
+Create:
+
+* `skills_tokens` = list of tokens from `skills` (lowercase, strip spaces, split on commas/pipe/semicolon)
+* `text_blob` = cleaned concatenation of `profile + skills + perks + education + offer + company`
+
+---
+
+## 4) Recommender Requirements (Matcher Page)
+
+### 4.1 User Inputs (Sidebar)
+
+Inputs:
+
+* Skills (text): comma-separated string (required)
+* Location mode (select):
+
+  * “Any”
+  * “Remote/WFH only”
+  * A city dropdown (top cities from dataset) + optional custom city text
+* Minimum stipend (number, INR) default 0
+* Duration range slider (months) e.g. 1–12
+* Include unpaid internships (checkbox)
+* Sort mode:
+
+  * “Best match”
+  * “Highest stipend”
+  * “Closest deadline”
+
+### 4.2 Filtering (hard constraints)
+
+Filter internships based on:
+
+* location choice (remote/city/any)
+* duration_months within slider (if duration_months missing, allow it by default)
+* stipend threshold:
+
+  * if stipend_type is fixed/range -> require stipend_max >= min_stipend
+  * if stipend_type unknown -> allow by default
+  * if unpaid -> depends on checkbox
+* closest deadline sort should prefer earlier apply_by_dt if available
+
+### 4.3 Ranking (soft scoring)
+
+Implement TF-IDF content-based ranking:
+
+* Fit TF-IDF on `text_blob` (cache it)
+* Query text = user skills + optional keywords
+* Cosine similarity score
+
+Final score formula:
+
+* score = 0.75 * similarity + 0.15 * stipend_score + 0.10 * deadline_score
+  Where:
+* stipend_score: normalize stipend_max across filtered set (unknown -> median)
+* deadline_score: nearer future deadlines slightly higher; missing -> neutral
+
+### 4.4 Explainability (must show)
+
+For each recommended internship show:
+
+* matched skills = intersection(user skills tokens, skills_tokens)
+* why recommended text including: matched skills + constraints satisfied (remote/city, stipend, duration)
+* show similarity score and final score
+
+### 4.5 Output (Matcher Page)
+
+* Display top 10 recommendations as cards or a table
+* Each row shows: profile, company, location, stipend (original + parsed), duration (original + parsed), apply_by_date, offer
+* Provide “Download results CSV” button
+
+Handle no results gracefully with suggestions (loosen filters).
+
+---
+
+## 5) Market Insights Page
+
+Generate at least 6 charts using matplotlib or Streamlit charts:
+
+* Top cities by internship count
+* Remote vs on-site share
+* Top profiles
+* Top skills frequency (from skills_tokens)
+* Stipend type distribution
+* Duration distribution (months)
+  Optional: city-wise stipend summary if enough parsed values exist.
+
+Also show 8–12 bullet insights computed from these charts (auto-generated text).
+
+---
+
+## 6) Code Structure (must create multiple files)
+
+Create these modules:
+
+1. `app.py`
+
+   * Streamlit UI, page routing, calling other modules
+
+2. `preprocess.py`
+
+   * load CSV, clean tokens, parse stipend/duration/dates/location, save processed CSV
+
+3. `recommender.py`
+
+   * TF-IDF model build + caching + filter/rank + explainability
+
+4. `insights.py`
+
+   * EDA computations + chart helpers + insights text
+
+Create `requirements.txt` with:
+
+* streamlit
+* pandas
+* numpy
+* scikit-learn
+* python-dateutil
+
+Also create `README.md` explaining:
+
+* where to place dataset (`data/merged_internships_dataset.csv`)
+* how to run: `streamlit run app.py --server.address 0.0.0.0 --server.port 3000`
+
+---
+
+## 7) Robustness / Must Not Crash
+
+* If parsing fails for a row, keep original and set parsed fields to null/unknown
+* Handle empty user skills input with a warning
+* Use Streamlit caching so TF-IDF isn’t refit on every interaction
+* App must start without errors even if some fields parse to NaT/null
+
+Deliver the complete codebase with good comments.
+
+---
+
+## What I (the user) will do next
+
+I will run the app and report any errors. Make sure logging/print statements help identify issues quickly.
+
+---
+
+### छोटा extra tip (ताकि Replit “generate code” better करे)
+
+जब Replit code बना दे, तुम मुझे ये 3 चीज़ें भेज देना:
+
+1. file tree (कौन-कौन सी files बनी)
+2. exact error traceback (copy-paste)
+3. dataset path/filename confirm (`data/...csv`)
+
+फिर मैं error-by-error patching steps दे दूँगा.
