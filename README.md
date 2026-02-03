@@ -1,2 +1,1 @@
 IIT Patna Semester-2 Capstone Project
-Streamlit_prompt_for_AI_chatbot
